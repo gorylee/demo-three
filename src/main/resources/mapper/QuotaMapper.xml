@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.demothree.customer.mapper.QuotaMapper">
+
+    <!-- 通用查询映射结果 -->
+    <resultMap id="BaseResultMap" type="com.example.demothree.customer.entity.Quota">
+        <id column="id" property="id" />
+        <result column="quota_no" property="quotaNo" />
+        <result column="name" property="name" />
+        <result column="credit_quota" property="creditQuota" />
+        <result column="description" property="description" />
+        <result column="deadline_date" property="deadlineDate" />
+        <result column="division" property="division" />
+        <result column="remark" property="remark" />
+        <result column="creator_id" property="creatorId" />
+        <result column="creator_name" property="creatorName" />
+        <result column="create_time" property="createTime" />
+        <result column="modifier_id" property="modifierId" />
+        <result column="modifier_name" property="modifierName" />
+        <result column="modify_time" property="modifyTime" />
+        <result column="deleted" property="deleted" />
+    </resultMap>
+
+    <!-- 通用查询结果列 -->
+    <sql id="Base_Column_List">
+        id, quota_no, name, credit_quota, description, deadline_date, division, remark, creator_id, creator_name, create_time, modifier_id, modifier_name, modify_time, deleted
+    </sql>
+
+</mapper>

@@ -1,0 +1,54 @@
+# 代码生成器配置 - 独立配置文件
+generator:
+  # 全局配置
+  global-config:
+    author: GoryLee
+    output-dir: ${user.dir}\src\main\java
+    open: false
+    enable-swagger: false
+    date-format: yyyy-MM-dd HH:mm:ss
+    enable-cache: false
+    kotlin: false
+    active-record: false
+    base-result-map: false
+    base-column-list: false
+
+  # 数据源配置（可以覆盖主配置，也可以使用主配置）
+  datasource:
+    url: jdbc:mysql://localhost:3306/demo?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai
+    username: root
+    password: 123456
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  # 包配置
+  package-config:
+    parent: com.example.demothree
+    module-name: customer
+    entity: entity
+    mapper: mapper
+    service: service
+    service-impl: service.impl
+    controller: controller
+    xml: mapper
+    pathInfo: ${user.dir}\src\main\resources
+
+  # 策略配置
+  strategy-config:
+    naming: underline_to_camel
+    column-naming: underline_to_camel
+    entity-lombok: true
+    entity-chain-model: true
+    rest-controller-style: true
+    controller-hyphen-style: true
+    table-prefix:
+      - crm_
+    #      - sys_
+    include:
+      - crm_quota
+    #      - role
+    #      - permission
+#    exclude:
+#      - test_
+    # 是否启用自动扫描数据库所有表
+    auto-scan-tables: false
+

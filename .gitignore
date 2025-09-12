@@ -1,0 +1,16 @@
+.idea
+*.iml
+.settings
+.classpath
+.project
+src/main/webapp/WEB-INF/classes
+src/main/webapp/WEB-INF/lib
+src/main/webapp/upload/*
+target
+logs
+*.log
+rebel.xml
+
+.DS_Store
+mvnw.cmd
+mvnw
