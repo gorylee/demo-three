@@ -10,6 +10,9 @@ spring:
     url: jdbc:mysql://localhost:3306/demo?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai
     username: root
     password: 123456
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
 
 # MyBatis Plus配置
 mybatis-plus:
@@ -27,3 +30,17 @@ mybatis-plus:
 # 日志
 logging:
   config: classpath:logback-plus.xml
+
+# Flowable 配置
+flowable:
+  # 禁用其他引擎
+  cmmn:
+    enabled: false
+  dmn:
+    enabled: false
+  idm:
+    enabled: false
+  database-schema-update: false  # 生产环境设为false
+  check-process-definitions: false  # 禁用自动部署
+  history-level: audit # 历史级别
+  async-executor-activate: false # 启用异步执行器

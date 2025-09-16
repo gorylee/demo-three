@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+             xmlns:flowable="http://flowable.org/bpmn"
+             targetNamespace="http://www.flowable.org/processdef">
+
+    <process id="leaveProcess" name="请假审批流程" isExecutable="true">
+
+        <!-- 开始事件 -->
+        <startEvent id="startEvent" name="开始请假" flowable:initiator="applicant">
+            <extensionElements>
+                <flowable:formProperty id="leaveType" name="请假类型" type="string" required="true"/>
+                <flowable:formProperty id="leaveDays" name="请假天数" type="long" required="true"/>
+                <flowable:formProperty id="startDate" name="开始日期" type="date" required="true"/>
+                <flowable:formProperty id="endDate" name="结束日期" type="date" required="true"/>
+                <flowable:formProperty id="reason" name="请假原因" type="string" required="true"/>
+            </extensionElements>
+        </startEvent>
+
+        <!-- 部门经理审批 -->
+        <userTask id="deptManagerApproval" name="部门经理审批" flowable:assignee="${deptManager}">
+            <extensionElements>
+                <flowable:formProperty id="deptComment" name="审批意见" type="string"/>
+                <flowable:formProperty id="deptApproved" name="是否批准" type="boolean" required="true"/>
+            </extensionElements>
+        </userTask>
+
+        <!-- 排他网关 -->
+        <exclusiveGateway id="approvalDecision" name="审批决定"/>
+
+        <!-- HR备案 -->
+        <userTask id="hrRecord" name="HR备案" flowable:assignee="hr">
+            <extensionElements>
+                <flowable:formProperty id="hrComment" name="备案意见" type="string"/>
+            </extensionElements>
+        </userTask>
+
+        <!-- 总经理审批（超过3天需要总经理审批） -->
+        <userTask id="generalManagerApproval" name="总经理审批" flowable:assignee="generalManager">
+            <extensionElements>
+                <flowable:formProperty id="gmComment" name="总经理意见" type="string"/>
+                <flowable:formProperty id="gmApproved" name="是否批准" type="boolean" required="true"/>
+            </extensionElements>
+        </userTask>
+
+        <!-- 结束事件 -->
+        <endEvent id="endApproved" name="审批通过"/>
+        <endEvent id="endRejected" name="审批拒绝"/>
+
+        <!-- 序列流 -->
+        <sequenceFlow id="toDeptManager" sourceRef="startEvent" targetRef="deptManagerApproval"/>
+        <sequenceFlow id="toDecision" sourceRef="deptManagerApproval" targetRef="approvalDecision"/>
+
+        <!-- 部门批准流向 -->
+        <sequenceFlow id="toHr" sourceRef="approvalDecision" targetRef="hrRecord">
+            <conditionExpression xsi:type="tFormalExpression">${deptApproved == true}</conditionExpression>
+        </sequenceFlow>
+
+        <!-- 部门拒绝流向 -->
+        <sequenceFlow id="toReject" sourceRef="approvalDecision" targetRef="endRejected">
+            <conditionExpression xsi:type="tFormalExpression">${deptApproved == false}</conditionExpression>
+        </sequenceFlow>
+
+        <!-- HR备案后判断是否需要总经理审批 -->
+        <sequenceFlow id="toGeneralManager" sourceRef="hrRecord" targetRef="generalManagerApproval">
+            <conditionExpression xsi:type="tFormalExpression">${leaveDays > 3}</conditionExpression>
+        </sequenceFlow>
+
+        <!-- 直接结束（3天以内） -->
+        <sequenceFlow id="toApproveShort" sourceRef="hrRecord" targetRef="endApproved">
+            <conditionExpression xsi:type="tFormalExpression">${leaveDays &lt;= 3}</conditionExpression>
+        </sequenceFlow>
+
+        <!-- 总经 理批准 -->
+        <sequenceFlow id="toApprove" sourceRef="generalManagerApproval" targetRef="endApproved">
+            <conditionExpression xsi:type="tFormalExpression">${gmApproved == true}</conditionExpression>
+        </sequenceFlow>
+
+        <!-- 总经 理拒绝 -->
+        <sequenceFlow id="toRejectByGM" sourceRef="generalManagerApproval" targetRef="endRejected">
+            <conditionExpression xsi:type="tFormalExpression">${gmApproved == false}</conditionExpression>
+        </sequenceFlow>
+
+        <sequenceFlow id="toEnd" sourceRef="endApproved" targetRef="endApproved"/>
+    </process>
+</definitions>
