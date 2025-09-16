@@ -1,5 +1,7 @@
 package com.example.demothree.flowable.service;
 
+import cn.hutool.core.util.StrUtil;
+import lombok.extern.slf4j.Slf4j;
 import org.flowable.engine.RepositoryService;
 import org.flowable.engine.repository.Deployment;
 import org.flowable.engine.repository.ProcessDefinition;
@@ -13,8 +15,19 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.xpath.XPath;
+import javax.xml.xpath.XPathConstants;
+import javax.xml.xpath.XPathExpression;
+import javax.xml.xpath.XPathFactory;
+import org.w3c.dom.Document;
+import org.w3c.dom.Node;
 
 @Service
+@Slf4j
 public class SmartProcessDeploymentService {
 
     @Autowired
@@ -26,57 +39,87 @@ public class SmartProcessDeploymentService {
      * 智能部署所有流程定义
      */
     public void deployAllProcessesSmart() throws IOException {
-        System.out.println("开始智能部署流程定义...");
+        log.info("开始智能部署流程定义...");
 
         PathMatchingResourcePatternResolver resolver = new PathMatchingResourcePatternResolver();
-        Resource[] resources = resolver.getResources("classpath:/processes/*.bpmn20.xml");
+        Resource[] resourcesXml = resolver.getResources("classpath:/processes/*.bpmn20.xml");
+        Resource[] resourcesBpmn = resolver.getResources("classpath:/processes/*.bpmn");
+        List<Resource> resources = new ArrayList<>();
+        resources.addAll(Arrays.asList(resourcesXml));
+        resources.addAll(Arrays.asList(resourcesBpmn));
 
         for (Resource resource : resources) {
-            String filename = resource.getFilename();
-            String processKey = filename.replace(".bpmn20.xml", "");
+            String fullFilename = resource.getFilename();
+            String filename =  this.getBeforeFirstDot(fullFilename);
 
-            try {
-                String newChecksum = calculateChecksum(resource.getInputStream());
+            try (InputStream is = resource.getInputStream()) {
+                byte[] bytes = is.readAllBytes();
+                if (StrUtil.isEmpty(filename)) {
+                    log.error("⚠️ 文件名为空，跳过: " + fullFilename);
+                    continue;
+                }
+
+                String processKey = extractProcessId(bytes);
+                if (StrUtil.isEmpty(processKey)) {
+                    log.error("⚠️ 无法从BPMN中解析process id，文件: " + fullFilename + "，跳过。");
+                    continue;
+                }
+
+                // 将文件名参与校验和，文件名变动也视为变更
+                String newChecksum = DigestUtils.md5DigestAsHex(fullFilename.getBytes())
+                        + ":" + DigestUtils.md5DigestAsHex(bytes);
+
                 String existingChecksum = getExistingChecksum(processKey);
 
                 if (existingChecksum != null && existingChecksum.equals(newChecksum)) {
                     // 内容未改变，跳过部署
-                    System.out.println("✅ 流程未改变，跳过部署: " + processKey);
+                    log.info("✅ 流程未改变，跳过部署: " + processKey);
                     continue;
                 }
 
+
                 // 内容改变或首次部署
                 Deployment deployment = repositoryService.createDeployment()
-                        .addInputStream(filename, resource.getInputStream())
+                        .addBytes(fullFilename, bytes)
                         .name("智能部署 - " + filename)
                         .key(processKey)
                         .deploy();
 
-                // 更新校验和
+                // 更新校验和（以process id为索引）
                 processChecksums.put(processKey, newChecksum);
 
                 ProcessDefinition processDefinition = repositoryService.createProcessDefinitionQuery()
                         .deploymentId(deployment.getId())
                         .singleResult();
 
-                System.out.println("🚀 部署新版本: " + processDefinition.getKey() +
+                log.info("🚀 部署新版本: " + processDefinition.getKey() +
                         " 版本: " + processDefinition.getVersion() +
                         " (内容已改变)");
 
             } catch (Exception e) {
-                System.err.println("❌ 部署失败: " + filename + " - " + e.getMessage());
+                log.error("❌ 部署失败: " + filename + " - " + e.getMessage());
             }
         }
 
         printDeploymentSummary();
     }
 
-    /**
-     * 计算文件内容的MD5校验和
-     */
-    private String calculateChecksum(InputStream inputStream) throws IOException {
+    private String getBeforeFirstDot(String filename) {
+        int dotIndex = filename.indexOf('.');
+        if (dotIndex == -1) {
+            return filename; // 如果没有点号，返回原字符串
+        }
+        return filename.substring(0, dotIndex);
+    }
+
+    // 已统一使用 calculateCompositeChecksum
+
+    // 与部署时保持一致：联合校验和 = MD5(resourceName) + ":" + MD5(resourceBytes)
+    private String calculateCompositeChecksum(String resourceName, InputStream inputStream) throws IOException {
         byte[] content = inputStream.readAllBytes();
-        return DigestUtils.md5DigestAsHex(content);
+        String namePart = DigestUtils.md5DigestAsHex(resourceName.getBytes());
+        String contentPart = DigestUtils.md5DigestAsHex(content);
+        return namePart + ":" + contentPart;
     }
 
     /**
@@ -102,7 +145,7 @@ public class SmartProcessDeploymentService {
                     latest.getResourceName())) {
 
                 if (resourceStream != null) {
-                    String checksum = calculateChecksum(resourceStream);
+                    String checksum = calculateCompositeChecksum(latest.getResourceName(), resourceStream);
                     processChecksums.put(processKey, checksum);
                     return checksum;
                 }
@@ -118,26 +161,54 @@ public class SmartProcessDeploymentService {
     public Deployment deployProcessSmart(String processFileName) throws IOException {
         Resource resource = new PathMatchingResourcePatternResolver()
                 .getResource("classpath:/processes/" + processFileName);
+        String filename =  this.getBeforeFirstDot(processFileName);
+        Deployment deployment = null;
+        try (InputStream is = resource.getInputStream()) {
+            byte[] bytes = is.readAllBytes();
+            if (StrUtil.isEmpty(filename)) {
+                log.error("⚠️ 文件名为空，跳过: " + processFileName);
+                return null;
+            }
 
-        String processKey = processFileName.replace(".bpmn20.xml", "");
-        String newChecksum = calculateChecksum(resource.getInputStream());
-        String existingChecksum = getExistingChecksum(processKey);
+            String processKey = extractProcessId(bytes);
+            if (StrUtil.isEmpty(processKey)) {
+                log.error("⚠️ 无法从BPMN中解析process id，文件: " + processFileName + "，跳过。");
+                return null;
+            }
 
-        if (existingChecksum != null && existingChecksum.equals(newChecksum)) {
-            System.out.println("✅ 流程内容未改变，跳过部署: " + processKey);
-            return null;
+            String newChecksum = DigestUtils.md5DigestAsHex(processFileName.getBytes())
+                    + ":" + DigestUtils.md5DigestAsHex(bytes);
+
+            String existingChecksum = getExistingChecksum(processKey);
+
+            if (existingChecksum != null && existingChecksum.equals(newChecksum)) {
+                // 内容未改变，跳过部署
+                log.info("✅ 流程未改变，跳过部署: " + processKey);
+                return null;
+            }
+
+
+            // 内容改变或首次部署
+            deployment = repositoryService.createDeployment()
+                    .addBytes(processFileName, bytes)
+                    .name("智能部署 - " + filename)
+                    .key(processKey)
+                    .deploy();
+
+            // 更新校验和
+            processChecksums.put(processKey, newChecksum);
+
+            ProcessDefinition processDefinition = repositoryService.createProcessDefinitionQuery()
+                    .deploymentId(deployment.getId())
+                    .singleResult();
+
+            log.info("🚀 部署新版本: " + processDefinition.getKey() +
+                    " 版本: " + processDefinition.getVersion() +
+                    " (内容已改变)");
+
+        } catch (Exception e) {
+            log.error("❌ 部署失败: " + filename + " - " + e.getMessage());
         }
-
-        Deployment deployment = repositoryService.createDeployment()
-                .addInputStream(processFileName, resource.getInputStream())
-                .name("智能部署 - " + processFileName)
-                .key(processKey)
-                .deploy();
-
-        // 更新校验和
-        processChecksums.put(processKey, newChecksum);
-
-        System.out.println("🚀 部署新版本: " + processKey + " (内容已改变)");
         return deployment;
     }
 
@@ -148,35 +219,42 @@ public class SmartProcessDeploymentService {
         Resource resource = new PathMatchingResourcePatternResolver()
                 .getResource("classpath:/processes/" + processFileName);
 
-        String processKey = processFileName.replace(".bpmn20.xml", "");
+        try (InputStream is = resource.getInputStream()) {
+            byte[] bytes = is.readAllBytes();
+            String processKey = extractProcessId(bytes);
+            if (StrUtil.isEmpty(processKey)) {
+                log.error("⚠️ 无法从BPMN中解析process id，文件: " + processFileName + "，跳过。");
+                return null;
+            }
 
-        Deployment deployment = repositoryService.createDeployment()
-                .addInputStream(processFileName, resource.getInputStream())
-                .name("强制部署 - " + processFileName)
-                .key(processKey)
-                .deploy();
+            Deployment deployment = repositoryService.createDeployment()
+                    .addBytes(processFileName, bytes)
+                    .name("强制部署 - " + processFileName)
+                    .key(processKey)
+                    .deploy();
 
-        // 更新校验和
-        String newChecksum = calculateChecksum(resource.getInputStream());
-        processChecksums.put(processKey, newChecksum);
+            // 更新校验和
+            String newChecksum = DigestUtils.md5DigestAsHex((processFileName + "|#|_").getBytes())
+                    + ":" + DigestUtils.md5DigestAsHex(bytes);
+            processChecksums.put(processKey, newChecksum);
 
-        System.out.println("🔨 强制部署: " + processKey);
-        return deployment;
+            log.info("🔨 强制部署: " + processKey);
+            return deployment;
+        }
     }
 
     /**
      * 打印部署摘要
      */
     private void printDeploymentSummary() {
-        System.out.println("\n=== 部署完成 ===");
-        System.out.println("内存中缓存的流程校验和: " + processChecksums.size() + " 个");
+        log.info("\n=== 部署完成 ===");
+        log.info("内存中缓存的流程校验和: " + processChecksums.size() + " 个");
 
         repositoryService.createProcessDefinitionQuery()
                 .orderByProcessDefinitionKey().asc()
                 .list()
                 .forEach(pd -> {
-                    System.out.printf("流程: %-15s 版本: %d 部署时间: %s%n",
-                            pd.getKey(), pd.getVersion(), pd.getDeploymentId());
+                    log.info("流程: {} 版本: {}",pd.getKey(), pd.getVersion());
                 });
     }
 
@@ -195,7 +273,7 @@ public class SmartProcessDeploymentService {
             for (int i = keepVersions; i < allVersions.size(); i++) {
                 ProcessDefinition oldVersion = allVersions.get(i);
                 repositoryService.deleteDeployment(oldVersion.getDeploymentId(), true);
-                System.out.println("🗑️  清理旧版本: " + processKey + " v" + oldVersion.getVersion());
+                log.info("🗑️  清理旧版本: " + processKey + " v" + oldVersion.getVersion());
             }
         }
     }
@@ -206,4 +284,22 @@ public class SmartProcessDeploymentService {
     public String getProcessChecksum(String processKey) {
         return processChecksums.get(processKey);
     }
+
+    // 从BPMN XML字节中解析第一个process的id，忽略命名空间
+    private String extractProcessId(byte[] xmlBytes) {
+        try (InputStream in = new java.io.ByteArrayInputStream(xmlBytes)) {
+            DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+            factory.setNamespaceAware(true);
+            Document doc = factory.newDocumentBuilder().parse(in);
+
+            XPath xPath = XPathFactory.newInstance().newXPath();
+            XPathExpression expr = xPath.compile("/*[local-name()='definitions']/*[local-name()='process']/@id");
+            Node node = (Node) expr.evaluate(doc, XPathConstants.NODE);
+            return node == null ? null : node.getNodeValue();
+        } catch (Exception e) {
+            log.error("解析BPMN process id失败: " + e.getMessage());
+            return null;
+        }
+    }
+
 }

@@ -2,6 +2,7 @@ package com.example.demothree.flowable.controller;
 
 import cn.hutool.json.JSONUtil;
 import com.example.demothree.flowable.service.WorkflowService;
+import lombok.extern.slf4j.Slf4j;
 import org.flowable.engine.runtime.ProcessInstance;
 import org.flowable.task.api.Task;
 import org.flowable.task.api.history.HistoricTaskInstance;
@@ -14,6 +15,7 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/workflow")
+@Slf4j
 public class WorkflowController {
 
     @Autowired
@@ -41,7 +43,7 @@ public class WorkflowController {
     @GetMapping("/tasks/user/{userId}")
     public List<Task> getUserTasks(@PathVariable String userId) {
         List<Task> userTasks = workflowService.getUserTasks(userId);
-        System.out.println("用户待办任务：" + JSONUtil.toJsonStr(userTasks));
+        log.info("用户待办任务：" + JSONUtil.toJsonStr(userTasks));
         return userTasks;
     }
 

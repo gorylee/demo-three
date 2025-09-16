@@ -44,7 +44,7 @@ public class LeaveProcessController {
             BeanUtils.copyProperties(task, taskDto);
             taskDtos.add(taskDto);
         }
-        System.out.println("用户待办任务：" + JSONUtil.toJsonStr(taskDtos));
+        log.info("用户待办任务：" + JSONUtil.toJsonStr(taskDtos));
         return JSONUtil.toJsonStr(taskDtos);
     }
 
